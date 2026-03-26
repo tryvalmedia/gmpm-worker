@@ -39,7 +39,30 @@ export default {
       return new Response(null, { headers: CORS_HEADERS });
     }
 
-    // Debug endpoint — test each source individually
+    // HTML debug — see raw response from a specific source
+    const htmlDebug = url.searchParams.get('html');
+    if (htmlDebug) {
+      const urls = {
+        foothills: 'https://foothillsanimalshelter.org/dogs-adoption/',
+        denver: 'https://www.denvergov.org/Government/Agencies-Departments-Offices/Agencies-Departments-Offices-Directory/Animal-Shelter/Adopt-a-Pet/Adoptable-Pets-Online',
+        hsppr: 'https://24petconnect.com/PKPK',
+        longmont: 'https://www.longmonthumane.org/animals/',
+      };
+      const targetUrl = urls[htmlDebug];
+      if (!targetUrl) return new Response('Unknown source', { status: 400 });
+      try {
+        const res = await fetchWithTimeout(targetUrl, { headers: FETCH_HEADERS }, 8000);
+        const text = await res.text();
+        return new Response(JSON.stringify({
+          status: res.status,
+          url: res.url,
+          length: text.length,
+          sample: text.substring(0, 3000),
+        }), { headers: CORS_HEADERS });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { headers: CORS_HEADERS });
+      }
+    }
     const url = new URL(request.url);
     if (url.searchParams.get('debug') === '1') {
       const results = {};
