@@ -40,7 +40,8 @@ export default {
     }
 
     // HTML debug — see raw response from a specific source
-    const htmlDebug = url.searchParams.get('html');
+    const reqUrl = new URL(request.url);
+    const htmlDebug = reqUrl.searchParams.get('html');
     if (htmlDebug) {
       const urls = {
         foothills: 'https://foothillsanimalshelter.org/dogs-adoption/',
@@ -63,8 +64,7 @@ export default {
         return new Response(JSON.stringify({ error: e.message }), { headers: CORS_HEADERS });
       }
     }
-    const url = new URL(request.url);
-    if (url.searchParams.get('debug') === '1') {
+    if (reqUrl.searchParams.get('debug') === '1') {
       const results = {};
       const sources = [
         { name: 'humane_colorado', fn: fetchHumaneColorado },
@@ -90,8 +90,7 @@ export default {
       if (request.method === 'POST') {
         params = await request.json();
       } else {
-        const url = new URL(request.url);
-        params = Object.fromEntries(url.searchParams);
+        params = Object.fromEntries(reqUrl.searchParams);
       }
 
       // Try cache first
