@@ -18,6 +18,19 @@ const FETCH_HEADERS = {
   'Accept-Language': 'en-US,en;q=0.5',
 };
 
+// Fetch with a 5 second timeout — slow sources fail fast without blocking others
+async function fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
 export default {
 
   // ─── HTTP REQUEST HANDLER ──────────────────────────────────────
@@ -125,7 +138,7 @@ async function refreshCache(env) {
 
 async function fetchHumaneColorado() {
   const url = 'https://humanecolorado.org/animals/?_pet_animal_type=dog%2Cpuppy&_pet_record_type=available%2C7a6e4f7c956981bab7196df203d380a1%2Cd80ef6dd787418b1aa71412dab712e39';
-  const res = await fetch(url, { headers: FETCH_HEADERS });
+  const res = await fetchWithTimeout(url, { headers: FETCH_HEADERS });
   if (!res.ok) return [];
   const html = await res.text();
   const dogs = [];
@@ -157,7 +170,7 @@ async function fetchHumaneColorado() {
 }
 
 async function fetchFoothills() {
-  const res = await fetch('https://foothillsanimalshelter.org/dogs-adoption/', { headers: FETCH_HEADERS });
+  const res = await fetchWithTimeout('https://foothillsanimalshelter.org/dogs-adoption/', { headers: FETCH_HEADERS });
   if (!res.ok) return [];
   const html = await res.text();
   const dogs = [];
@@ -193,7 +206,7 @@ async function fetchFoothills() {
 
 async function fetchDenver() {
   const url = 'https://www.denvergov.org/Government/Agencies-Departments-Offices/Agencies-Departments-Offices-Directory/Animal-Shelter/Adopt-a-Pet/Adoptable-Pets-Online';
-  const res = await fetch(url, { headers: FETCH_HEADERS });
+  const res = await fetchWithTimeout(url, { headers: FETCH_HEADERS });
   if (!res.ok) return [];
   const html = await res.text();
   const dogs = [];
@@ -224,7 +237,7 @@ async function fetchDenver() {
 }
 
 async function fetchHSPPR() {
-  const res = await fetch('https://24petconnect.com/PKPK', { headers: FETCH_HEADERS });
+  const res = await fetchWithTimeout('https://24petconnect.com/PKPK', { headers: FETCH_HEADERS });
   if (!res.ok) return [];
   const html = await res.text();
   const dogs = [];
@@ -258,7 +271,7 @@ async function fetchHSPPR() {
 }
 
 async function fetchLongmont() {
-  const res = await fetch('https://www.longmonthumane.org/animals/', { headers: FETCH_HEADERS });
+  const res = await fetchWithTimeout('https://www.longmonthumane.org/animals/', { headers: FETCH_HEADERS });
   if (!res.ok) return [];
   const text = await res.text();
   const dogs = [];
