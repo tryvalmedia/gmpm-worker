@@ -1,3 +1,12 @@
 name = "gmpm-dog-scraper"
 main = "index.js"
 compatibility_date = "2024-01-01"
+
+# KV namespace binding - dog listing cache
+[[kv_namespaces]]
+binding = "DOG_CACHE"
+id = "f30b57b11a7d4aa9a4e1412bf3cb1c07"
+
+# Cron trigger - refresh cache every hour
+[triggers]
+crons = ["0 * * * *"]
