@@ -1,6 +1,9 @@
 // GetMyPetMatch - Multi-Source Dog Scraper Worker
-// Sources: Humane Colorado, Foothills, Denver Animal Shelter, HSPPR (24PetConnect), Longmont Humane Society
-// Deploy as: gmpm-dog-scraper
+// Sources: Humane Colorado, Foothills, Denver Animal Shelter, HSPPR, Longmont Humane Society
+// Features: KV caching (1hr TTL) + hourly cron refresh
+
+const CACHE_KEY = 'dog_listings';
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -16,6 +19,8 @@ const FETCH_HEADERS = {
 };
 
 export default {
+
+  // ─── HTTP REQUEST HANDLER ──────────────────────────────────────
   async fetch(request, env, ctx) {
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: CORS_HEADERS });
@@ -30,43 +35,93 @@ export default {
         params = Object.fromEntries(url.searchParams);
       }
 
-      const [humaneResult, foothillsResult, denverResult, hspprResult, longmontResult] = await Promise.allSettled([
-        fetchHumaneColorado(),
-        fetchFoothills(),
-        fetchDenver(),
-        fetchHSPPR(),
-        fetchLongmont(),
-      ]);
+      // Try cache first
+      const allDogs = await getOrRefreshCache(env);
 
-      let allDogs = [];
-      if (humaneResult.status === 'fulfilled') allDogs = allDogs.concat(humaneResult.value);
-      if (foothillsResult.status === 'fulfilled') allDogs = allDogs.concat(foothillsResult.value);
-      if (denverResult.status === 'fulfilled') allDogs = allDogs.concat(denverResult.value);
-      if (hspprResult.status === 'fulfilled') allDogs = allDogs.concat(hspprResult.value);
-      if (longmontResult.status === 'fulfilled') allDogs = allDogs.concat(longmontResult.value);
-
-      const scored = scoreDogs(allDogs, params);
+      // Score and return matches
+      const scored = scoreDogs(allDogs.dogs, params);
       const limit = params.tier === 'paid' ? 5 : 1;
       const matches = scored.slice(0, limit);
 
       return new Response(JSON.stringify({
         success: true,
-        total_available: allDogs.length,
-        sources: {
-          'Humane Colorado': humaneResult.status === 'fulfilled' ? humaneResult.value.length : 0,
-          'Foothills Animal Shelter': foothillsResult.status === 'fulfilled' ? foothillsResult.value.length : 0,
-          'Denver Animal Shelter': denverResult.status === 'fulfilled' ? denverResult.value.length : 0,
-          'HSPPR Colorado Springs': hspprResult.status === 'fulfilled' ? hspprResult.value.length : 0,
-          'Longmont Humane Society': longmontResult.status === 'fulfilled' ? longmontResult.value.length : 0,
-        },
+        total_available: allDogs.dogs.length,
+        sources: allDogs.sources,
+        cache_age_minutes: Math.round((Date.now() - allDogs.timestamp) / 60000),
         matches,
       }), { headers: CORS_HEADERS });
 
     } catch (err) {
-      return new Response(JSON.stringify({ success: false, error: err.message, matches: [] }), { status: 500, headers: CORS_HEADERS });
+      return new Response(JSON.stringify({
+        success: false,
+        error: err.message,
+        matches: []
+      }), { status: 500, headers: CORS_HEADERS });
     }
+  },
+
+  // ─── CRON TRIGGER HANDLER ──────────────────────────────────────
+  // Fires every hour — refreshes the cache in the background
+  async scheduled(event, env, ctx) {
+    console.log('Cron triggered — refreshing dog listings cache');
+    await refreshCache(env);
+    console.log('Cache refresh complete');
   }
 };
+
+// ─── CACHE LOGIC ───────────────────────────────────────────────────
+async function getOrRefreshCache(env) {
+  try {
+    const cached = await env.DOG_CACHE.get(CACHE_KEY, { type: 'json' });
+    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL_MS) {
+      return cached; // fresh cache hit
+    }
+  } catch (e) {
+    console.log('Cache read error:', e.message);
+  }
+  // Cache miss or stale — fetch fresh
+  return await refreshCache(env);
+}
+
+async function refreshCache(env) {
+  const [humaneResult, foothillsResult, denverResult, hspprResult, longmontResult] = await Promise.allSettled([
+    fetchHumaneColorado(),
+    fetchFoothills(),
+    fetchDenver(),
+    fetchHSPPR(),
+    fetchLongmont(),
+  ]);
+
+  let dogs = [];
+  if (humaneResult.status === 'fulfilled') dogs = dogs.concat(humaneResult.value);
+  if (foothillsResult.status === 'fulfilled') dogs = dogs.concat(foothillsResult.value);
+  if (denverResult.status === 'fulfilled') dogs = dogs.concat(denverResult.value);
+  if (hspprResult.status === 'fulfilled') dogs = dogs.concat(hspprResult.value);
+  if (longmontResult.status === 'fulfilled') dogs = dogs.concat(longmontResult.value);
+
+  const data = {
+    timestamp: Date.now(),
+    dogs,
+    sources: {
+      'Humane Colorado': humaneResult.status === 'fulfilled' ? humaneResult.value.length : 0,
+      'Foothills Animal Shelter': foothillsResult.status === 'fulfilled' ? foothillsResult.value.length : 0,
+      'Denver Animal Shelter': denverResult.status === 'fulfilled' ? denverResult.value.length : 0,
+      'HSPPR Colorado Springs': hspprResult.status === 'fulfilled' ? hspprResult.value.length : 0,
+      'Longmont Humane Society': longmontResult.status === 'fulfilled' ? longmontResult.value.length : 0,
+    }
+  };
+
+  // Store in KV with 2hr expiration (safety buffer)
+  try {
+    await env.DOG_CACHE.put(CACHE_KEY, JSON.stringify(data), { expirationTtl: 7200 });
+  } catch (e) {
+    console.log('Cache write error:', e.message);
+  }
+
+  return data;
+}
+
+// ─── SCRAPERS ──────────────────────────────────────────────────────
 
 async function fetchHumaneColorado() {
   const url = 'https://humanecolorado.org/animals/?_pet_animal_type=dog%2Cpuppy&_pet_record_type=available%2C7a6e4f7c956981bab7196df203d380a1%2Cd80ef6dd787418b1aa71412dab712e39';
@@ -149,7 +204,6 @@ async function fetchDenver() {
     if (!typeMatch || !typeMatch[1].toLowerCase().includes('dog')) continue;
     const nameRaw = block.match(/^([A-Z][A-Z\s\-']+?)(?:\s*\([^)]+\))?(?:\n|<)/);
     if (!nameRaw) continue;
-    const name = nameRaw[1].trim();
     const genderMatch = block.match(/Gender:\s*([^\n<]+)/i);
     const breedMatch = block.match(/Breed:\s*([^\n<]+)/i);
     const ageMatch = block.match(/Age:\s*([^\n<]+)/i);
@@ -157,7 +211,8 @@ async function fetchDenver() {
     const breed = breedMatch ? breedMatch[1].trim() : 'Mixed Breed';
     const age_text = ageMatch ? ageMatch[1].trim() : 'Unknown';
     dogs.push({
-      name, sex: genderMatch ? genderMatch[1].trim() : 'Unknown', breed,
+      name: nameRaw[1].trim(),
+      sex: genderMatch ? genderMatch[1].trim() : 'Unknown', breed,
       image: imgMatch ? (imgMatch[1].startsWith('http') ? imgMatch[1] : 'https://www.denvergov.org' + imgMatch[1]) : '',
       age_text, age_category: getAgeCategoryFromText(age_text),
       size: estimateSize(breed), location: 'Denver, CO',
@@ -214,18 +269,13 @@ async function fetchLongmont() {
     const sex = match[2].trim();
     const breedRaw = match[3].trim();
     const ageRaw = match[4].trim();
-    let size = 'medium';
-    if (breedRaw.toLowerCase().includes('over 44')) size = 'large';
-    else if (breedRaw.toLowerCase().includes('up to 44')) size = 'medium';
-    else size = estimateSize(breedRaw);
+    let size = breedRaw.toLowerCase().includes('over 44') ? 'large' : breedRaw.toLowerCase().includes('up to 44') ? 'medium' : estimateSize(breedRaw);
     const breed = breedRaw.replace(/,?\s*(Large|Medium|Small)[^,]*/i, '').trim() || 'Mixed Breed';
     const age_text = ageRaw.replace('<1yo', 'Under 1 year').replace(/(\d+)yo/, '$1 years');
     dogs.push({
-      name, sex, breed,
-      image: '', // Longmont text page has no images — skip for now, filtered later
+      name, sex, breed, image: '',
       age_text, age_category: getAgeCategoryFromText(age_text),
-      size, location: 'Longmont, CO',
-      shelter: 'Longmont Humane Society',
+      size, location: 'Longmont, CO', shelter: 'Longmont Humane Society',
       link: 'https://www.longmonthumane.org/animals/',
       weight: null, adoption_fee: null,
     });
@@ -233,6 +283,7 @@ async function fetchLongmont() {
   return dogs;
 }
 
+// ─── HELPERS ───────────────────────────────────────────────────────
 function getAgeCategoryFromMatch(m) {
   if (!m) return 'adult';
   const num = parseInt(m[1]), unit = m[2].toLowerCase();
@@ -261,7 +312,7 @@ function estimateSize(breed) {
   if (!breed) return 'medium';
   const b = breed.toLowerCase();
   const small = ['chihuahua', 'dachshund', 'pomeranian', 'yorkie', 'maltese', 'shih tzu', 'toy', 'miniature', 'pug', 'beagle', 'corgi', 'havanese', 'bichon'];
-  const large = ['german shepherd', 'labrador', 'golden retriever', 'husky', 'rottweiler', 'great dane', 'malamute', 'mastiff', 'doberman', 'weimaraner', 'boxer', 'pit bull', 'shepherd', 'retriever', 'cattle dog', 'catahoula', 'hound', 'great pyrenees', 'whippet', 'dutch shepherd', 'over 44'];
+  const large = ['german shepherd', 'labrador', 'golden retriever', 'husky', 'rottweiler', 'great dane', 'malamute', 'mastiff', 'doberman', 'weimaraner', 'boxer', 'pit bull', 'shepherd', 'retriever', 'cattle dog', 'catahoula', 'hound', 'great pyrenees', 'whippet', 'dutch shepherd'];
   if (small.some(s => b.includes(s))) return 'small';
   if (large.some(l => b.includes(l))) return 'large';
   return 'medium';
