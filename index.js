@@ -54,15 +54,25 @@ export default {
       try {
         const res = await fetchWithTimeout(targetUrl, { headers: FETCH_HEADERS }, 8000);
         const text = await res.text();
-        // Find the section with animal data rather than just the start
-        const animalIdx = text.search(/animal|Gender|Breed|Age:|dog-card|animalCard|pet-card|adoptable/i);
-        const start = Math.max(0, animalIdx - 100);
+        // Search the full HTML for animal data patterns
+        const patterns = ['Gender:', 'Breed:', 'animalCard', 'pet-card', 'Animal type', 'animal-name', 'Name:</'];
+        let bestIdx = -1;
+        let bestPattern = '';
+        for (const p of patterns) {
+          const idx = text.indexOf(p);
+          if (idx > 0 && (bestIdx === -1 || idx < bestIdx)) {
+            bestIdx = idx;
+            bestPattern = p;
+          }
+        }
+        const start = Math.max(0, bestIdx - 200);
         return new Response(JSON.stringify({
           status: res.status,
           url: res.url,
           length: text.length,
-          animal_section_start: animalIdx,
-          sample: text.substring(start, start + 4000),
+          pattern_found: bestPattern,
+          pattern_at: bestIdx,
+          sample: bestIdx > 0 ? text.substring(start, start + 5000) : text.substring(0, 3000),
         }), { headers: CORS_HEADERS });
       } catch (e) {
         return new Response(JSON.stringify({ error: e.message }), { headers: CORS_HEADERS });
