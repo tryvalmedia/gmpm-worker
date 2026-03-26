@@ -39,6 +39,29 @@ export default {
       return new Response(null, { headers: CORS_HEADERS });
     }
 
+    // Debug endpoint — test each source individually
+    const url = new URL(request.url);
+    if (url.searchParams.get('debug') === '1') {
+      const results = {};
+      const sources = [
+        { name: 'humane_colorado', fn: fetchHumaneColorado },
+        { name: 'foothills', fn: fetchFoothills },
+        { name: 'denver', fn: fetchDenver },
+        { name: 'hsppr', fn: fetchHSPPR },
+        { name: 'longmont', fn: fetchLongmont },
+      ];
+      for (const s of sources) {
+        const start = Date.now();
+        try {
+          const dogs = await s.fn();
+          results[s.name] = { count: dogs.length, ms: Date.now() - start };
+        } catch (e) {
+          results[s.name] = { error: e.message, ms: Date.now() - start };
+        }
+      }
+      return new Response(JSON.stringify(results, null, 2), { headers: CORS_HEADERS });
+    }
+
     try {
       let params = {};
       if (request.method === 'POST') {
