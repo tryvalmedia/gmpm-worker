@@ -64,7 +64,6 @@ export default {
                 { fieldName: 'animalSpecies', operation: 'equals', criteria: 'Dog' },
                 { fieldName: 'animalStatus', operation: 'equals', criteria: 'Available' },
                 { fieldName: 'animalPictures', operation: 'greaterthan', criteria: '0' },
-                { fieldName: 'animalLocation', operation: 'contains', criteria: 'CO' },
               ],
               fields: ['animalName', 'animalSex', 'animalBreed', 'animalAge', 'animalSize', 'animalPictures', 'animalLocation', 'animalOrgName'],
             },
@@ -342,7 +341,7 @@ async function fetchRescueGroups(env) {
         { fieldName: 'animalSpecies', operation: 'equals', criteria: 'Dog' },
         { fieldName: 'animalStatus', operation: 'equals', criteria: 'Available' },
         { fieldName: 'animalPictures', operation: 'greaterthan', criteria: '0' },
-        { fieldName: 'animalLocation', operation: 'contains', criteria: 'CO' },
+        { fieldName: 'animalState', operation: 'equals', criteria: 'CO' },
       ],
       fields: [
         'animalID', 'animalName', 'animalSex', 'animalBreed', 'animalMix',
