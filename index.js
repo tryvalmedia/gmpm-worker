@@ -351,7 +351,6 @@ async function fetchRescueGroups(env) {
         { fieldName: 'animalSpecies', operation: 'equals', criteria: 'Dog' },
         { fieldName: 'animalStatus', operation: 'equals', criteria: 'Available' },
         { fieldName: 'animalPictures', operation: 'greaterthan', criteria: '0' },
-        { fieldName: 'animalLocation', operation: 'contains', criteria: ', CO' },
       ],
       fields: [
         'animalID', 'animalName', 'animalSex', 'animalBreed', 'animalMix',
