@@ -344,7 +344,7 @@ async function fetchRescueGroups(env) {
     objectAction: 'publicSearch',
     search: {
       resultStart: 0,
-      resultLimit: 100,
+      resultLimit: 250,
       resultSort: 'animalID',
       resultOrder: 'desc',
       filters: [
@@ -396,7 +396,12 @@ async function fetchRescueGroups(env) {
       weight: null,
       adoption_fee: null,
     };
-  }).filter(d => d.name && d.image);
+  }).filter(d => {
+    if (!d.name || !d.image) return false;
+    // Only keep Colorado dogs — check location string for CO
+    const loc = d.location.toUpperCase();
+    return loc.includes(', CO') || loc.includes(' CO ') || loc.endsWith(' CO') || loc === 'CO' || loc.includes('COLORADO');
+  });
 }
 
 
