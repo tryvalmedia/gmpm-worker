@@ -314,70 +314,67 @@ async function fetchFoothills() {
   return dogs;
 }
 
-// ─── RESCUEGROUPS DUAL-API ─────────────────────────────────────────
-// v5: location + distance sorting → CO dogs near Denver
-// v2: batch picture lookup by animal ID → real photo CDN URLs
+// ─── RESCUEGROUPS v5 ───────────────────────────────────────────────
+// Pure v5 — pictureThumbnailUrl is on the animal object directly
+// postalcode+distance gives us CO dogs, orgs include gives us city/state
 async function fetchRescueGroups(env) {
   if (!env.RESCUEGROUPS_API_KEY) return [];
 
-  // Pure v2 — returns real photo URLs natively
-  // Filter by animalCitystate containing CO to get Colorado dogs
-  const body = JSON.stringify({
-    apikey: env.RESCUEGROUPS_API_KEY,
-    objectType: 'animals',
-    objectAction: 'publicSearch',
-    search: {
-      resultStart: 0,
-      resultLimit: 100,
-      resultSort: 'animalID',
-      resultOrder: 'desc',
-      filters: [
-        { fieldName: 'animalSpecies', operation: 'equals', criteria: 'Dog' },
-        { fieldName: 'animalStatus', operation: 'equals', criteria: 'Available' },
-        { fieldName: 'animalPictures', operation: 'greaterthan', criteria: '0' },
-        { fieldName: 'animalCitystate', operation: 'contains', criteria: 'CO' },
-      ],
-      fields: [
-        'animalID', 'animalName', 'animalSex', 'animalBreed', 'animalMix',
-        'animalAge', 'animalAgeGroup', 'animalSize', 'animalCitystate',
-        'animalPictures', 'animalAdoptionUrl', 'animalOrgName',
-      ],
-    },
-  });
+  const url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&postalcode=80201&distance=150&include=orgs&fields[animals]=name,sex,breedString,ageString,sizeGroup,pictureThumbnailUrl,urlDetail,orgName&fields[orgs]=name,city,state';
 
-  const res = await fetchWithTimeout('https://api.rescuegroups.org/http/v2.json', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body,
+  const res = await fetchWithTimeout(url, {
+    headers: { 'Authorization': env.RESCUEGROUPS_API_KEY, 'Content-Type': 'application/json' }
   }, 8000);
 
   if (!res.ok) return [];
   const json = await res.json();
-  if (!json.data) return [];
+  if (!json.data || !Array.isArray(json.data)) return [];
 
-  return Object.values(json.data).map(a => {
-    let image = '';
-    if (Array.isArray(a.animalPictures) && a.animalPictures.length > 0) {
-      const pic = a.animalPictures[0];
-      image = pic.urlSecureFullsize || pic.urlSecureThumbnail || pic.large?.url || pic.original?.url || '';
+  // Build org city/state lookup from included
+  const orgMap = {};
+  if (json.included) {
+    for (const inc of json.included) {
+      if (inc.type === 'orgs' && inc.attributes) {
+        const city = inc.attributes.city || '';
+        const state = inc.attributes.state || '';
+        orgMap[inc.id] = city && state ? `${city}, ${state}` : (city || state || 'Colorado');
+      }
     }
-    const breed = a.animalBreed || 'Mixed Breed';
-    const age_text = a.animalAge || a.animalAgeGroup || 'Unknown';
+  }
+
+  return json.data.map(animal => {
+    const a = animal.attributes;
+    // pictureThumbnailUrl is on the animal — strip ?width=100 to get full size
+    const image = a.pictureThumbnailUrl
+      ? a.pictureThumbnailUrl.replace(/\?width=\d+$/, '')
+      : '';
+    if (!image) return null;
+
+    // Get location from included orgs
+    let location = 'Colorado';
+    if (animal.relationships && animal.relationships.orgs && animal.relationships.orgs.data && animal.relationships.orgs.data.length > 0) {
+      const orgId = animal.relationships.orgs.data[0].id;
+      if (orgMap[orgId]) location = orgMap[orgId];
+    }
+
+    const breed = a.breedString || 'Mixed Breed';
+    const age_text = a.ageString || 'Unknown';
+
     return {
-      name: a.animalName || 'Unknown',
-      sex: a.animalSex || 'Unknown',
-      breed: a.animalMix === 'Yes' ? `${breed} Mix` : breed,
+      name: a.name || 'Unknown',
+      sex: a.sex || 'Unknown',
+      breed,
       image,
       age_text,
       age_category: getAgeCategoryFromText(age_text),
-      size: normalizeSizeRG(a.animalSize) || estimateSize(breed),
-      location: a.animalCitystate || 'Colorado',
-      shelter: a.animalOrgName || 'Colorado Rescue',
-      link: a.animalAdoptionUrl || 'https://rescuegroups.org',
+      size: normalizeSizeRG(a.sizeGroup) || estimateSize(breed),
+      location,
+      shelter: a.orgName || 'Colorado Rescue',
+      link: a.urlDetail || 'https://rescuegroups.org',
       weight: null,
       adoption_fee: null,
     };
-  }).filter(d => d.name && d.image);
+  }).filter(d => d && d.name && d.image);
 }
 
 
