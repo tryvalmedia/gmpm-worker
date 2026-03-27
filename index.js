@@ -55,7 +55,7 @@ export default {
       try {
         // RescueGroups v2 requires POST
         if (htmlDebug === 'rescuegroups') {
-          const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=5&postalcode=80201&distance=150&fields[animals]=name,sex,breedString,ageString,sizeGroup,locationCitystate,orgName,urlDetail';
+          const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=5&postalcode=80201&distance=150';
           const v5Res = await fetchWithTimeout(v5Url, {
             headers: { 'Authorization': env.RESCUEGROUPS_API_KEY, 'Content-Type': 'application/json' }
           }, 8000);
@@ -267,30 +267,29 @@ async function fetchFoothills() {
   const html = await res.text();
   const dogs = [];
 
-  // Structure: <div class="pet"> ... <div class="image" style="background-image: url(...)"> ... <h4>Name</h4> ... <ul class="pet-details">
-  const petRegex = /<div class="pet[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/gi;
-  let petMatch;
+  // Split on each dog card — Foothills uses <div class="pet ...">
+  const blocks = html.split('<div class="pet');
+  // First element is page header, skip it
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i];
 
-  while ((petMatch = petRegex.exec(html)) !== null) {
-    const block = petMatch[1];
-
-    // Image from background-image style
+    // Image from background-image: url(...)
     const imgMatch = block.match(/background-image:\s*url\(([^)]+)\)/i);
-    const image = imgMatch ? imgMatch[1].replace(/['"]/g, '') : '';
+    const image = imgMatch ? imgMatch[1].replace(/['"]/g, '').trim() : '';
     if (!image) continue;
 
-    // Name from h4
+    // Name from <h4>
     const nameMatch = block.match(/<h4>([^<]+)<\/h4>/i);
     if (!nameMatch) continue;
     const name = nameMatch[1].trim();
 
-    // Details from li tags
+    // Details from <strong>Field:</strong>Value pattern
     const ageMatch = block.match(/<strong>Age:<\/strong>([^<]+)/i);
-    const weightMatch = block.match(/<strong>Weight:<\/strong>([^<]+)/i);
     const breedMatch = block.match(/<strong>Breed:<\/strong>([^<]+)/i);
     const sexMatch = block.match(/<strong>Sex:<\/strong>([^<]+)/i);
+    const weightMatch = block.match(/<strong>Weight:<\/strong>([^<]+)/i);
     const feeMatch = block.match(/<strong>Adoption Fee:<\/strong>([^<]+)/i);
-    const linkMatch = block.match(/href="(https?:\/\/foothillsanimalshelter[^"]+)"/i);
+    const linkMatch = block.match(/href="(https?:\/\/foothillsanimalshelter\.org\/pets\/[^"]+)"/i);
 
     const breed = breedMatch ? breedMatch[1].trim() : 'Mixed Breed';
     const age_text = ageMatch ? ageMatch[1].trim() : 'Unknown';
@@ -322,7 +321,7 @@ async function fetchRescueGroups(env) {
   if (!env.RESCUEGROUPS_API_KEY) return [];
 
   // Step 1: v5 — get 100 dogs within 150mi of Denver, sorted by distance
-  const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&postalcode=80201&distance=150&fields[animals]=name,sex,breedString,ageString,sizeGroup,locationCitystate,orgName,urlDetail';
+  const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&postalcode=80201&distance=150';
 
   let v5Animals = [];
   try {
@@ -382,8 +381,11 @@ async function fetchRescueGroups(env) {
   return v5Animals.map(animal => {
     const a = animal.attributes;
     const image = pictureMap[animal.id] || '';
-    const breed = a.breedString || 'Mixed Breed';
-    const age_text = a.ageString || 'Unknown';
+    const breed = a.breedString || a.breedPrimary || 'Mixed Breed';
+    const age_text = a.ageString || a.ageGroup || 'Unknown';
+    const location = a.locationCitystate || a.locationCity || a.location || a.citystate || 'Colorado';
+    const shelter = a.orgName || a.rescueName || a.organizationName || 'Colorado Rescue';
+    const link = a.urlDetail || a.adoptionUrl || a.url || 'https://rescuegroups.org';
     return {
       name: a.name || 'Unknown',
       sex: a.sex || 'Unknown',
@@ -392,9 +394,9 @@ async function fetchRescueGroups(env) {
       age_text,
       age_category: getAgeCategoryFromText(age_text),
       size: normalizeSizeRG(a.sizeGroup) || estimateSize(breed),
-      location: a.locationCitystate || 'Colorado',
-      shelter: a.orgName || 'Colorado Rescue',
-      link: a.urlDetail || 'https://rescuegroups.org',
+      location,
+      shelter,
+      link,
       weight: null,
       adoption_fee: null,
     };
