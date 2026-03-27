@@ -355,35 +355,29 @@ async function fetchRescueGroups(env) {
       ],
       fields: [
         'animalID', 'animalName', 'animalSex', 'animalBreed', 'animalMix',
-        'animalAge', 'animalAgeGroup', 'animalSize', 'animalLocation',
-        'animalPictures', 'animalAdoptionUrl', 'animalOrgID', 'animalOrgName',
+        'animalAge', 'animalAgeGroup', 'animalSize',
+        'animalPictures', 'animalAdoptionUrl', 'animalOrgName',
       ],
     },
   });
 
   const res = await fetchWithTimeout('https://api.rescuegroups.org/http/v2.json', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body,
   }, 8000);
 
-  if (!res.ok) {
-    console.log('RescueGroups v2 error:', res.status);
-    return [];
-  }
+  if (!res.ok) return [];
 
   const json = await res.json();
   if (!json.data) return [];
 
   return Object.values(json.data).map(a => {
-    // Get first picture URL
-    const pics = a.animalPictures;
+    // animalPictures is an array — grab first picture's secure URL
     let image = '';
-    if (pics && Object.keys(pics).length > 0) {
-      const firstPic = Object.values(pics)[0];
-      image = firstPic.urlFull || firstPic.urlMed || firstPic.urlSmall || firstPic.url || '';
+    if (Array.isArray(a.animalPictures) && a.animalPictures.length > 0) {
+      const pic = a.animalPictures[0];
+      image = pic.urlSecureFullsize || pic.urlSecureThumbnail || pic.large?.url || pic.original?.url || '';
     }
 
     const breed = a.animalBreed || 'Mixed Breed';
@@ -397,7 +391,7 @@ async function fetchRescueGroups(env) {
       age_text,
       age_category: getAgeCategoryFromText(age_text),
       size: normalizeSizeRG(a.animalSize) || estimateSize(breed),
-      location: a.animalLocation || 'Colorado',
+      location: 'Colorado',
       shelter: a.animalOrgName || 'Colorado Rescue',
       link: a.animalAdoptionUrl || 'https://rescuegroups.org',
       weight: null,
