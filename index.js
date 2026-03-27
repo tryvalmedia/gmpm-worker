@@ -57,15 +57,18 @@ export default {
         if (htmlDebug === 'rescuegroups') {
           const body = JSON.stringify({
             apikey: env.RESCUEGROUPS_API_KEY,
-            objectType: 'animals', objectAction: 'publicSearch',
+            objectType: 'animals',
+            objectAction: 'publicSearch',
             search: {
-              resultStart: 0, resultLimit: 3, resultSort: 'animalID', resultOrder: 'desc',
+              resultStart: 0,
+              resultLimit: 3,
+              resultSort: 'animalID',
+              resultOrder: 'asc',
               filters: [
                 { fieldName: 'animalSpecies', operation: 'equals', criteria: 'Dog' },
                 { fieldName: 'animalStatus', operation: 'equals', criteria: 'Available' },
-                { fieldName: 'animalPictures', operation: 'greaterthan', criteria: '0' },
               ],
-              fields: ['animalName', 'animalSex', 'animalBreed', 'animalAge', 'animalSize', 'animalPictures', 'animalLocation', 'animalOrgName'],
+              fields: ['animalName', 'animalSex', 'animalBreed', 'animalAge', 'animalPictures'],
             },
           });
           const res = await fetchWithTimeout('https://api.rescuegroups.org/http/v2.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, 8000);
@@ -79,6 +82,8 @@ export default {
             resultCount: json.data ? Object.keys(json.data).length : 0,
             api_status: json.status,
             api_message: json.message,
+            key_present: !!env.RESCUEGROUPS_API_KEY,
+            key_length: env.RESCUEGROUPS_API_KEY ? env.RESCUEGROUPS_API_KEY.length : 0,
             first_animal_keys: firstAnimal ? Object.keys(firstAnimal) : [],
             first_animal_pictures: firstAnimal ? firstAnimal.animalPictures : null,
             first_animal_sample: firstAnimal ? { name: firstAnimal.animalName, breed: firstAnimal.animalBreed, age: firstAnimal.animalAge, size: firstAnimal.animalSize } : null,
