@@ -73,6 +73,7 @@ export default {
               included_count: json.included ? json.included.length : 0,
               included_types: json.included ? [...new Set(json.included.map(i => i.type))] : [],
               first_included: json.included && json.included[0] ? json.included[0] : null,
+              first_included_all_attrs: json.included && json.included[0] && json.included[0].attributes ? Object.keys(json.included[0].attributes) : [],
             }, null, 2), { headers: CORS_HEADERS });
           } catch(e) {
             return new Response(JSON.stringify({ parse_error: e.message, raw: text.substring(0, 500) }), { headers: CORS_HEADERS });
