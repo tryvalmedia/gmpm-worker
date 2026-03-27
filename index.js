@@ -48,11 +48,15 @@ export default {
         denver: 'https://www.denvergov.org/Government/Agencies-Departments-Offices/Agencies-Departments-Offices-Directory/Animal-Shelter/Adopt-a-Pet/Adoptable-Pets-Online',
         hsppr: 'https://24petconnect.com/PKPK',
         longmont: 'https://www.longmonthumane.org/animals/',
+        rescuegroups: 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=5&postalcode=80201&distance=50',
       };
       const targetUrl = urls[htmlDebug];
       if (!targetUrl) return new Response('Unknown source', { status: 400 });
       try {
-        const res = await fetchWithTimeout(targetUrl, { headers: FETCH_HEADERS }, 8000);
+        const fetchOpts = htmlDebug === 'rescuegroups'
+          ? { headers: { 'Authorization': env.RESCUEGROUPS_API_KEY, 'Content-Type': 'application/json' } }
+          : { headers: FETCH_HEADERS };
+        const res = await fetchWithTimeout(targetUrl, fetchOpts, 8000);
         const text = await res.text();
         // Search the full HTML for animal data patterns
         const patterns = ['Gender:', 'Breed:', 'animalCard', 'pet-card', 'Animal type', 'animal-name', 'Name:</'];
