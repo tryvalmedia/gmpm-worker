@@ -320,7 +320,7 @@ async function fetchFoothills() {
 async function fetchRescueGroups(env) {
   if (!env.RESCUEGROUPS_API_KEY) return [];
 
-  const url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&postalcode=80201&distance=150&include=orgs&fields[animals]=name,sex,breedString,ageString,sizeGroup,pictureThumbnailUrl,urlDetail,orgName&fields[orgs]=name,city,state';
+  const url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&postalcode=80201&distance=150&include=orgs&fields[animals]=name,sex,breedString,ageString,sizeGroup,pictureThumbnailUrl,slug,orgName&fields[orgs]=name,city,state';
 
   const res = await fetchWithTimeout(url, {
     headers: { 'Authorization': env.RESCUEGROUPS_API_KEY, 'Content-Type': 'application/json' }
@@ -370,7 +370,9 @@ async function fetchRescueGroups(env) {
       size: normalizeSizeRG(a.sizeGroup) || estimateSize(breed),
       location,
       shelter: a.orgName || 'Colorado Rescue',
-      link: a.urlDetail || 'https://rescuegroups.org',
+      link: a.slug
+        ? `https://rescuegroups.org/adopt/${a.slug}/`
+        : `https://rescuegroups.org/adopt/${animal.id}/`,
       weight: null,
       adoption_fee: null,
     };
