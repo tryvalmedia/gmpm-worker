@@ -68,7 +68,7 @@ export default {
                 { fieldName: 'animalSpecies', operation: 'equals', criteria: 'Dog' },
                 { fieldName: 'animalStatus', operation: 'equals', criteria: 'Available' },
               ],
-              fields: ['animalName', 'animalSex', 'animalBreed', 'animalAge', 'animalPictures'],
+              fields: ['animalName', 'animalSex', 'animalBreed', 'animalAge', 'animalPictures', 'animalLocation'],
             },
           });
           const res = await fetchWithTimeout('https://api.rescuegroups.org/http/v2.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, 8000);
@@ -86,7 +86,8 @@ export default {
             key_length: env.RESCUEGROUPS_API_KEY ? env.RESCUEGROUPS_API_KEY.length : 0,
             first_animal_keys: firstAnimal ? Object.keys(firstAnimal) : [],
             first_animal_pictures: firstAnimal ? firstAnimal.animalPictures : null,
-            first_animal_sample: firstAnimal ? { name: firstAnimal.animalName, breed: firstAnimal.animalBreed, age: firstAnimal.animalAge, size: firstAnimal.animalSize } : null,
+            first_animal_sample: firstAnimal ? { name: firstAnimal.animalName, breed: firstAnimal.animalBreed, age: firstAnimal.animalAge, location: firstAnimal.animalLocation } : null,
+            all_locations: json.data ? Object.values(json.data).map(a => a.animalLocation).filter(Boolean) : [],
             raw_sample: text.substring(0, 300),
           }, null, 2), { headers: CORS_HEADERS });
         }
@@ -344,7 +345,7 @@ async function fetchRescueGroups(env) {
     objectAction: 'publicSearch',
     search: {
       resultStart: 0,
-      resultLimit: 250,
+      resultLimit: 100,
       resultSort: 'animalID',
       resultOrder: 'desc',
       filters: [
