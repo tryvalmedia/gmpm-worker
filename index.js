@@ -48,47 +48,27 @@ export default {
         denver: 'https://www.denvergov.org/Government/Agencies-Departments-Offices/Agencies-Departments-Offices-Directory/Animal-Shelter/Adopt-a-Pet/Adoptable-Pets-Online',
         hsppr: 'https://24petconnect.com/PKPK',
         longmont: 'https://www.longmonthumane.org/animals/',
-        rescuegroups: '__v2__',
+        rescuegroups: '__v5_test__',
       };
       const targetUrl = urls[htmlDebug];
       if (!targetUrl) return new Response('Unknown source', { status: 400 });
       try {
         // RescueGroups v2 requires POST
         if (htmlDebug === 'rescuegroups') {
-          const body = JSON.stringify({
-            apikey: env.RESCUEGROUPS_API_KEY,
-            objectType: 'animals',
-            objectAction: 'publicSearch',
-            search: {
-              resultStart: 0,
-              resultLimit: 3,
-              resultSort: 'animalID',
-              resultOrder: 'asc',
-              filters: [
-                { fieldName: 'animalSpecies', operation: 'equals', criteria: 'Dog' },
-                { fieldName: 'animalStatus', operation: 'equals', criteria: 'Available' },
-              ],
-              fields: ['animalName', 'animalSex', 'animalBreed', 'animalAge', 'animalPictures', 'animalLocation'],
-            },
-          });
-          const res = await fetchWithTimeout('https://api.rescuegroups.org/http/v2.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, 8000);
-          const text = await res.text();
-          let json;
-          try { json = JSON.parse(text); } catch(e) { return new Response(JSON.stringify({ parse_error: e.message, raw: text.substring(0, 500) }), { headers: CORS_HEADERS }); }
-          const firstKey = json.data ? Object.keys(json.data)[0] : null;
-          const firstAnimal = firstKey ? json.data[firstKey] : null;
+          const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=5&sort=+distance&postalcode=80201&distance=150&fields[animals]=name,sex,breedString,ageString,sizeGroup,locationCitystate,orgName,urlDetail';
+          const v5Res = await fetchWithTimeout(v5Url, {
+            headers: { 'Authorization': env.RESCUEGROUPS_API_KEY, 'Content-Type': 'application/json' }
+          }, 8000);
+          const v5Text = await v5Res.text();
+          let v5Json; try { v5Json = JSON.parse(v5Text); } catch(e) { v5Json = { parse_error: e.message, raw: v5Text.substring(0, 300) }; }
           return new Response(JSON.stringify({
-            status: res.status,
-            resultCount: json.data ? Object.keys(json.data).length : 0,
-            api_status: json.status,
-            api_message: json.message,
+            v5_status: v5Res.status,
+            v5_data_count: v5Json.data ? v5Json.data.length : 0,
+            v5_meta: v5Json.meta,
+            v5_errors: v5Json.errors,
+            v5_first_animal: v5Json.data && v5Json.data[0] ? { id: v5Json.data[0].id, attrs: v5Json.data[0].attributes } : null,
             key_present: !!env.RESCUEGROUPS_API_KEY,
             key_length: env.RESCUEGROUPS_API_KEY ? env.RESCUEGROUPS_API_KEY.length : 0,
-            first_animal_keys: firstAnimal ? Object.keys(firstAnimal) : [],
-            first_animal_pictures: firstAnimal ? firstAnimal.animalPictures : null,
-            first_animal_sample: firstAnimal ? { name: firstAnimal.animalName, breed: firstAnimal.animalBreed, age: firstAnimal.animalAge, location: firstAnimal.animalLocation } : null,
-            all_locations: json.data ? Object.values(json.data).map(a => a.animalLocation).filter(Boolean) : [],
-            raw_sample: text.substring(0, 300),
           }, null, 2), { headers: CORS_HEADERS });
         }
         const fetchOpts = { headers: FETCH_HEADERS };
