@@ -48,7 +48,7 @@ export default {
         denver: 'https://www.denvergov.org/Government/Agencies-Departments-Offices/Agencies-Departments-Offices-Directory/Animal-Shelter/Adopt-a-Pet/Adoptable-Pets-Online',
         hsppr: 'https://24petconnect.com/PKPK',
         longmont: 'https://www.longmonthumane.org/animals/',
-        rescuegroups: 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=5&postalcode=80201&distance=50',
+        rescuegroups: 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=5&postalcode=80201&distance=50&include=pictures,orgs&fields[animals]=name,sex,breedString,ageString,sizeGroup,locationCitystate,orgName,urlDetail&fields[pictures]=urlFull,urlSmall',
       };
       const targetUrl = urls[htmlDebug];
       if (!targetUrl) return new Response('Unknown source', { status: 400 });
@@ -58,6 +58,26 @@ export default {
           : { headers: FETCH_HEADERS };
         const res = await fetchWithTimeout(targetUrl, fetchOpts, 8000);
         const text = await res.text();
+        // For rescuegroups, parse and return structure analysis
+        if (htmlDebug === 'rescuegroups') {
+          try {
+            const json = JSON.parse(text);
+            const first = json.data && json.data[0];
+            return new Response(JSON.stringify({
+              status: res.status,
+              meta: json.meta,
+              first_animal_keys: first ? Object.keys(first) : [],
+              first_animal_attr_keys: first ? Object.keys(first.attributes) : [],
+              first_animal_relationships: first && first.relationships ? Object.keys(first.relationships) : [],
+              first_picture_relationship: first && first.relationships && first.relationships.pictures ? first.relationships.pictures : null,
+              included_count: json.included ? json.included.length : 0,
+              included_types: json.included ? [...new Set(json.included.map(i => i.type))] : [],
+              first_included: json.included && json.included[0] ? json.included[0] : null,
+            }, null, 2), { headers: CORS_HEADERS });
+          } catch(e) {
+            return new Response(JSON.stringify({ parse_error: e.message, raw: text.substring(0, 500) }), { headers: CORS_HEADERS });
+          }
+        }
         // Search the full HTML for animal data patterns
         const patterns = ['Gender:', 'Breed:', 'animalCard', 'pet-card', 'Animal type', 'animal-name', 'Name:</'];
         let bestIdx = -1;
@@ -339,7 +359,7 @@ async function fetchRescueGroups(env) {
       weight: null,
       adoption_fee: null,
     };
-  }).filter(d => d.name && d.image);
+  }).filter(d => d.name && d.name !== 'Unknown');
 }
 
 function normalizeSizeRG(sizeString) {
