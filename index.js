@@ -83,9 +83,7 @@ export default {
       const sources = [
         { name: 'humane_colorado', fn: fetchHumaneColorado },
         { name: 'foothills', fn: fetchFoothills },
-        { name: 'denver', fn: fetchDenver },
-        { name: 'hsppr', fn: fetchHSPPR },
-        { name: 'longmont', fn: fetchLongmont },
+        { name: 'rescue_groups', fn: () => fetchRescueGroups(env) },
       ];
       for (const s of sources) {
         const start = Date.now();
@@ -156,20 +154,16 @@ async function getOrRefreshCache(env) {
 }
 
 async function refreshCache(env) {
-  const [humaneResult, foothillsResult, denverResult, hspprResult, longmontResult] = await Promise.allSettled([
+  const [humaneResult, foothillsResult, rescueGroupsResult] = await Promise.allSettled([
     fetchHumaneColorado(),
     fetchFoothills(),
-    fetchDenver(),
-    fetchHSPPR(),
-    fetchLongmont(),
+    fetchRescueGroups(env),
   ]);
 
   let dogs = [];
   if (humaneResult.status === 'fulfilled') dogs = dogs.concat(humaneResult.value);
   if (foothillsResult.status === 'fulfilled') dogs = dogs.concat(foothillsResult.value);
-  if (denverResult.status === 'fulfilled') dogs = dogs.concat(denverResult.value);
-  if (hspprResult.status === 'fulfilled') dogs = dogs.concat(hspprResult.value);
-  if (longmontResult.status === 'fulfilled') dogs = dogs.concat(longmontResult.value);
+  if (rescueGroupsResult.status === 'fulfilled') dogs = dogs.concat(rescueGroupsResult.value);
 
   const data = {
     timestamp: Date.now(),
@@ -177,9 +171,7 @@ async function refreshCache(env) {
     sources: {
       'Humane Colorado': humaneResult.status === 'fulfilled' ? humaneResult.value.length : 0,
       'Foothills Animal Shelter': foothillsResult.status === 'fulfilled' ? foothillsResult.value.length : 0,
-      'Denver Animal Shelter': denverResult.status === 'fulfilled' ? denverResult.value.length : 0,
-      'HSPPR Colorado Springs': hspprResult.status === 'fulfilled' ? hspprResult.value.length : 0,
-      'Longmont Humane Society': longmontResult.status === 'fulfilled' ? longmontResult.value.length : 0,
+      'RescueGroups (Colorado)': rescueGroupsResult.status === 'fulfilled' ? rescueGroupsResult.value.length : 0,
     }
   };
 
@@ -233,129 +225,110 @@ async function fetchFoothills() {
   if (!res.ok) return [];
   const html = await res.text();
   const dogs = [];
-  const sections = html.split(/(?=<h[23])/);
-  for (const section of sections) {
-    if (!section.includes('Age:') || !section.includes('Breed:')) continue;
-    const nameMatch = section.match(/<h[23][^>]*>\s*([A-Z][a-zA-Z\s\-']{1,30})\s*<\/h[23]>/);
+
+  // Structure: <div class="pet"> ... <div class="image" style="background-image: url(...)"> ... <h4>Name</h4> ... <ul class="pet-details">
+  const petRegex = /<div class="pet[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/gi;
+  let petMatch;
+
+  while ((petMatch = petRegex.exec(html)) !== null) {
+    const block = petMatch[1];
+
+    // Image from background-image style
+    const imgMatch = block.match(/background-image:\s*url\(([^)]+)\)/i);
+    const image = imgMatch ? imgMatch[1].replace(/['"]/g, '') : '';
+    if (!image) continue;
+
+    // Name from h4
+    const nameMatch = block.match(/<h4>([^<]+)<\/h4>/i);
     if (!nameMatch) continue;
     const name = nameMatch[1].trim();
-    if (name.length < 2) continue;
-    const ageMatch = section.match(/Age:\s*(?:<\/strong>)?\s*([^<\n]+)/i);
-    const breedMatch = section.match(/Breed:\s*(?:<\/strong>)?\s*([^<\n]+)/i);
-    const sexMatch = section.match(/Sex:\s*(?:<\/strong>)?\s*([^<\n]+)/i);
-    const weightMatch = section.match(/Weight:\s*(?:<\/strong>)?\s*([^<\n]+)/i);
-    const feeMatch = section.match(/Adoption Fee:\s*(?:<\/strong>)?\s*([^<\n]+)/i);
-    const imgMatch = section.match(/<img[^>]+src="([^"]+(?:foothills|wp-content)[^"]+)"[^>]*/i);
-    const linkMatch = section.match(/href="(https?:\/\/foothillsanimalshelter[^"]+)"/i);
+
+    // Details from li tags
+    const ageMatch = block.match(/<strong>Age:<\/strong>([^<]+)/i);
+    const weightMatch = block.match(/<strong>Weight:<\/strong>([^<]+)/i);
+    const breedMatch = block.match(/<strong>Breed:<\/strong>([^<]+)/i);
+    const sexMatch = block.match(/<strong>Sex:<\/strong>([^<]+)/i);
+    const feeMatch = block.match(/<strong>Adoption Fee:<\/strong>([^<]+)/i);
+    const linkMatch = block.match(/href="(https?:\/\/foothillsanimalshelter[^"]+)"/i);
+
     const breed = breedMatch ? breedMatch[1].trim() : 'Mixed Breed';
     const age_text = ageMatch ? ageMatch[1].trim() : 'Unknown';
+    const weight = weightMatch ? weightMatch[1].trim() : null;
+
     dogs.push({
-      name, sex: sexMatch ? sexMatch[1].trim() : 'Unknown', breed,
-      image: imgMatch ? imgMatch[1] : '',
-      age_text, age_category: getAgeCategoryFromText(age_text),
-      size: estimateSizeFromWeight(weightMatch ? weightMatch[1].trim() : null) || estimateSize(breed),
-      location: 'Jefferson County, CO', shelter: 'Foothills Animal Shelter',
+      name,
+      sex: sexMatch ? sexMatch[1].trim() : 'Unknown',
+      breed,
+      image,
+      age_text,
+      age_category: getAgeCategoryFromText(age_text),
+      size: estimateSizeFromWeight(weight) || estimateSize(breed),
+      location: 'Jefferson County, CO',
+      shelter: 'Foothills Animal Shelter',
       link: linkMatch ? linkMatch[1] : 'https://foothillsanimalshelter.org/dogs-adoption/',
-      weight: weightMatch ? weightMatch[1].trim() : null,
+      weight,
       adoption_fee: feeMatch ? feeMatch[1].trim() : null,
     });
   }
-  return dogs.filter(d => d.name && d.name.length > 1);
-}
 
-async function fetchDenver() {
-  const url = 'https://www.denvergov.org/Government/Agencies-Departments-Offices/Agencies-Departments-Offices-Directory/Animal-Shelter/Adopt-a-Pet/Adoptable-Pets-Online';
-  const res = await fetchWithTimeout(url, { headers: FETCH_HEADERS });
-  if (!res.ok) return [];
-  const html = await res.text();
-  const dogs = [];
-  const blocks = html.split(/Name:\s+[A-Z]/);
-  for (let i = 1; i < blocks.length; i++) {
-    const block = blocks[i];
-    const typeMatch = block.match(/Animal type:\s*([^\n<]+)/i);
-    if (!typeMatch || !typeMatch[1].toLowerCase().includes('dog')) continue;
-    const nameRaw = block.match(/^([A-Z][A-Z\s\-']+?)(?:\s*\([^)]+\))?(?:\n|<)/);
-    if (!nameRaw) continue;
-    const genderMatch = block.match(/Gender:\s*([^\n<]+)/i);
-    const breedMatch = block.match(/Breed:\s*([^\n<]+)/i);
-    const ageMatch = block.match(/Age:\s*([^\n<]+)/i);
-    const imgMatch = block.match(/<img[^>]+src="([^"]+)"[^>]*>/i);
-    const breed = breedMatch ? breedMatch[1].trim() : 'Mixed Breed';
-    const age_text = ageMatch ? ageMatch[1].trim() : 'Unknown';
-    dogs.push({
-      name: nameRaw[1].trim(),
-      sex: genderMatch ? genderMatch[1].trim() : 'Unknown', breed,
-      image: imgMatch ? (imgMatch[1].startsWith('http') ? imgMatch[1] : 'https://www.denvergov.org' + imgMatch[1]) : '',
-      age_text, age_category: getAgeCategoryFromText(age_text),
-      size: estimateSize(breed), location: 'Denver, CO',
-      shelter: 'Denver Animal Shelter', link: url,
-      weight: null, adoption_fee: null,
-    });
-  }
-  return dogs.filter(d => d.name && d.name.length > 1);
-}
-
-async function fetchHSPPR() {
-  const res = await fetchWithTimeout('https://24petconnect.com/PKPK', { headers: FETCH_HEADERS });
-  if (!res.ok) return [];
-  const html = await res.text();
-  const dogs = [];
-  const blocks = html.split(/Name:\s*/);
-  for (let i = 1; i < blocks.length; i++) {
-    const block = blocks[i];
-    const typeMatch = block.match(/Animal type:\s*([^\n<\r]+)/i);
-    if (!typeMatch || !typeMatch[1].toLowerCase().includes('dog')) continue;
-    const nameMatch = block.match(/^([^\n\r<(]+)/);
-    if (!nameMatch) continue;
-    const name = nameMatch[1].replace(/\([^)]+\)/, '').trim();
-    if (!name || name.length < 2) continue;
-    const animalIdMatch = block.match(/\(([A-Z]\d+)\)/);
-    const animalId = animalIdMatch ? animalIdMatch[1] : null;
-    const genderMatch = block.match(/Gender:\s*([^\n<\r]+)/i);
-    const breedMatch = block.match(/Breed:\s*([^\n<\r]+)/i);
-    const ageMatch = block.match(/Age:\s*([^\n<\r]+)/i);
-    const breed = breedMatch ? breedMatch[1].trim() : 'Mixed Breed';
-    const age_text = ageMatch ? ageMatch[1].trim() : 'Unknown';
-    dogs.push({
-      name: name.trim(), sex: genderMatch ? genderMatch[1].trim() : 'Unknown', breed,
-      image: animalId ? `https://24petconnect.com/image/${animalId}/PKPK/1` : '',
-      age_text, age_category: getAgeCategoryFromText(age_text),
-      size: estimateSize(breed), location: 'Colorado Springs, CO',
-      shelter: 'Humane Society of the Pikes Peak Region',
-      link: 'https://www.hsppr.org/pets/',
-      weight: null, adoption_fee: null,
-    });
-  }
-  return dogs.filter(d => d.name && d.name.length > 1);
-}
-
-async function fetchLongmont() {
-  const res = await fetchWithTimeout('https://www.longmonthumane.org/animals/', { headers: FETCH_HEADERS });
-  if (!res.ok) return [];
-  const text = await res.text();
-  const dogs = [];
-  const animalRegex = /([A-Z][a-zA-Z\s]{1,25})\s+(Male|Female)\s+Dog,\s+([^<\n]+?)\s+(<1yo|\d+yo|\d+\s+years?|\d+\s+months?)/gi;
-  let match;
-  while ((match = animalRegex.exec(text)) !== null) {
-    const name = match[1].trim();
-    const sex = match[2].trim();
-    const breedRaw = match[3].trim();
-    const ageRaw = match[4].trim();
-    let size = breedRaw.toLowerCase().includes('over 44') ? 'large' : breedRaw.toLowerCase().includes('up to 44') ? 'medium' : estimateSize(breedRaw);
-    const breed = breedRaw.replace(/,?\s*(Large|Medium|Small)[^,]*/i, '').trim() || 'Mixed Breed';
-    const age_text = ageRaw.replace('<1yo', 'Under 1 year').replace(/(\d+)yo/, '$1 years');
-    dogs.push({
-      name, sex, breed, image: '',
-      age_text, age_category: getAgeCategoryFromText(age_text),
-      size, location: 'Longmont, CO', shelter: 'Longmont Humane Society',
-      link: 'https://www.longmonthumane.org/animals/',
-      weight: null, adoption_fee: null,
-    });
-  }
   return dogs;
 }
 
-// ─── HELPERS ───────────────────────────────────────────────────────
+// ─── RESCUEGROUPS API ──────────────────────────────────────────────
+async function fetchRescueGroups(env) {
+  if (!env.RESCUEGROUPS_API_KEY) return [];
+
+  // Search for available dogs within 100 miles of Denver CO (80201)
+  const url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&sort=+distance&fields[animals]=name,sex,breedPrimary,breedSecondary,ageString,sizeString,pictureThumbnailUrl,urlDetail,locationCitystate,orgName,colorPrimary,isCourtesy&fields[orgs]=name,city,state&postalcode=80201&distance=150';
+
+  const res = await fetchWithTimeout(url, {
+    headers: {
+      'Authorization': env.RESCUEGROUPS_API_KEY,
+      'Content-Type': 'application/json',
+    }
+  }, 8000);
+
+  if (!res.ok) {
+    console.log('RescueGroups error:', res.status);
+    return [];
+  }
+
+  const json = await res.json();
+  if (!json.data || !Array.isArray(json.data)) return [];
+
+  return json.data.map(animal => {
+    const a = animal.attributes;
+    const breed = a.breedPrimary || 'Mixed Breed';
+    const age_text = a.ageString || 'Unknown';
+    const size = normalizeSizeRG(a.sizeString) || estimateSize(breed);
+    const image = a.pictureThumbnailUrl || '';
+
+    return {
+      name: a.name || 'Unknown',
+      sex: a.sex || 'Unknown',
+      breed: a.breedSecondary ? `${breed} / ${a.breedSecondary}` : breed,
+      image,
+      age_text,
+      age_category: getAgeCategoryFromText(age_text),
+      size,
+      location: a.locationCitystate || 'Colorado',
+      shelter: a.orgName || 'Colorado Rescue',
+      link: a.urlDetail || 'https://rescuegroups.org',
+      weight: null,
+      adoption_fee: null,
+    };
+  }).filter(d => d.name && d.image);
+}
+
+function normalizeSizeRG(sizeString) {
+  if (!sizeString) return null;
+  const s = sizeString.toLowerCase();
+  if (s.includes('small') || s.includes('tiny') || s.includes('x-small')) return 'small';
+  if (s.includes('large') || s.includes('x-large') || s.includes('extra')) return 'large';
+  return 'medium';
+}
+
+
 function getAgeCategoryFromMatch(m) {
   if (!m) return 'adult';
   const num = parseInt(m[1]), unit = m[2].toLowerCase();
