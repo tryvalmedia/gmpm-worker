@@ -55,7 +55,7 @@ export default {
       try {
         // RescueGroups v2 requires POST
         if (htmlDebug === 'rescuegroups') {
-          const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=5&sort=+distance&postalcode=80201&distance=150&fields[animals]=name,sex,breedString,ageString,sizeGroup,locationCitystate,orgName,urlDetail';
+          const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=5&postalcode=80201&distance=150&fields[animals]=name,sex,breedString,ageString,sizeGroup,locationCitystate,orgName,urlDetail';
           const v5Res = await fetchWithTimeout(v5Url, {
             headers: { 'Authorization': env.RESCUEGROUPS_API_KEY, 'Content-Type': 'application/json' }
           }, 8000);
@@ -322,7 +322,7 @@ async function fetchRescueGroups(env) {
   if (!env.RESCUEGROUPS_API_KEY) return [];
 
   // Step 1: v5 — get 100 dogs within 150mi of Denver, sorted by distance
-  const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&sort=+distance&postalcode=80201&distance=150&fields[animals]=name,sex,breedString,ageString,sizeGroup,locationCitystate,orgName,urlDetail';
+  const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&postalcode=80201&distance=150&fields[animals]=name,sex,breedString,ageString,sizeGroup,locationCitystate,orgName,urlDetail';
 
   let v5Animals = [];
   try {
