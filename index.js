@@ -254,7 +254,7 @@ async function fetchHumaneColorado() {
       size: estimateSize(parts[2]),
       location: locMatch ? locMatch[1].trim() : 'Denver, CO',
       shelter: 'Humane Colorado',
-      link: linkMatch ? linkMatch[1] : 'https://humanecolorado.org/adoption/adopt-a-dog/',
+      link: linkMatch ? linkMatch[1] : `https://humanecolorado.org/animals/?search=${encodeURIComponent(parts[0].trim())}&_pet_animal_type=dog`,
       weight: null, adoption_fee: null,
     });
   }
@@ -305,7 +305,7 @@ async function fetchFoothills() {
       size: estimateSizeFromWeight(weight) || estimateSize(breed),
       location: 'Jefferson County, CO',
       shelter: 'Foothills Animal Shelter',
-      link: linkMatch ? linkMatch[1] : 'https://foothillsanimalshelter.org/dogs-adoption/',
+      link: linkMatch ? linkMatch[1] : `https://foothillsanimalshelter.org/dogs-adoption/?search=${encodeURIComponent(name)}`,
       weight,
       adoption_fee: feeMatch ? feeMatch[1].trim() : null,
     });
