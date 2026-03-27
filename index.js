@@ -282,8 +282,9 @@ async function fetchFoothills() {
 async function fetchRescueGroups(env) {
   if (!env.RESCUEGROUPS_API_KEY) return [];
 
-  // Search for available dogs within 100 miles of Denver CO (80201)
-  const url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&sort=+distance&fields[animals]=name,sex,breedPrimary,breedSecondary,ageString,sizeString,pictureThumbnailUrl,urlDetail,locationCitystate,orgName,colorPrimary,isCourtesy&fields[orgs]=name,city,state&postalcode=80201&distance=150';
+  // Search for available dogs within 150 miles of Denver CO
+  // Use include=pictures to get photo data as a relationship
+  const url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&sort=+distance&postalcode=80201&distance=150&include=pictures,orgs&fields[animals]=name,sex,breedPrimary,breedSecondary,breedString,ageString,ageGroup,sizeGroup,sizeString,locationCitystate,urlDetail,orgName&fields[pictures]=large,urlFull,urlSmall&fields[orgs]=name,city,state';
 
   const res = await fetchWithTimeout(url, {
     headers: {
@@ -300,17 +301,34 @@ async function fetchRescueGroups(env) {
   const json = await res.json();
   if (!json.data || !Array.isArray(json.data)) return [];
 
+  // Build picture lookup from included data
+  const pictureMap = {};
+  if (json.included) {
+    for (const inc of json.included) {
+      if (inc.type === 'pictures' && inc.attributes) {
+        pictureMap[inc.id] = inc.attributes.urlFull || inc.attributes.urlSmall || inc.attributes.large || '';
+      }
+    }
+  }
+
   return json.data.map(animal => {
     const a = animal.attributes;
-    const breed = a.breedPrimary || 'Mixed Breed';
-    const age_text = a.ageString || 'Unknown';
-    const size = normalizeSizeRG(a.sizeString) || estimateSize(breed);
-    const image = a.pictureThumbnailUrl || '';
+
+    // Get first picture from relationship
+    let image = '';
+    if (animal.relationships && animal.relationships.pictures && animal.relationships.pictures.data && animal.relationships.pictures.data.length > 0) {
+      const firstPicId = animal.relationships.pictures.data[0].id;
+      image = pictureMap[firstPicId] || '';
+    }
+
+    const breed = a.breedString || a.breedPrimary || 'Mixed Breed';
+    const age_text = a.ageString || a.ageGroup || 'Unknown';
+    const size = normalizeSizeRG(a.sizeGroup || a.sizeString) || estimateSize(breed);
 
     return {
       name: a.name || 'Unknown',
       sex: a.sex || 'Unknown',
-      breed: a.breedSecondary ? `${breed} / ${a.breedSecondary}` : breed,
+      breed,
       image,
       age_text,
       age_category: getAgeCategoryFromText(age_text),
