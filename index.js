@@ -69,15 +69,20 @@ export default {
             },
           });
           const res = await fetchWithTimeout('https://api.rescuegroups.org/http/v2.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, 8000);
-          const json = await res.json();
+          const text = await res.text();
+          let json;
+          try { json = JSON.parse(text); } catch(e) { return new Response(JSON.stringify({ parse_error: e.message, raw: text.substring(0, 500) }), { headers: CORS_HEADERS }); }
           const firstKey = json.data ? Object.keys(json.data)[0] : null;
           const firstAnimal = firstKey ? json.data[firstKey] : null;
           return new Response(JSON.stringify({
             status: res.status,
             resultCount: json.data ? Object.keys(json.data).length : 0,
+            api_status: json.status,
+            api_message: json.message,
             first_animal_keys: firstAnimal ? Object.keys(firstAnimal) : [],
             first_animal_pictures: firstAnimal ? firstAnimal.animalPictures : null,
             first_animal_sample: firstAnimal ? { name: firstAnimal.animalName, breed: firstAnimal.animalBreed, age: firstAnimal.animalAge, size: firstAnimal.animalSize } : null,
+            raw_sample: text.substring(0, 300),
           }, null, 2), { headers: CORS_HEADERS });
         }
         const fetchOpts = { headers: FETCH_HEADERS };
