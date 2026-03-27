@@ -335,73 +335,90 @@ async function fetchFoothills() {
   return dogs;
 }
 
-// ─── RESCUEGROUPS API (v2) ─────────────────────────────────────────
+// ─── RESCUEGROUPS DUAL-API ─────────────────────────────────────────
+// v5: location + distance sorting → CO dogs near Denver
+// v2: batch picture lookup by animal ID → real photo CDN URLs
 async function fetchRescueGroups(env) {
   if (!env.RESCUEGROUPS_API_KEY) return [];
 
-  const body = JSON.stringify({
-    apikey: env.RESCUEGROUPS_API_KEY,
-    objectType: 'animals',
-    objectAction: 'publicSearch',
-    search: {
-      resultStart: 0,
-      resultLimit: 100,
-      resultSort: 'animalID',
-      resultOrder: 'desc',
-      filters: [
-        { fieldName: 'animalSpecies', operation: 'equals', criteria: 'Dog' },
-        { fieldName: 'animalStatus', operation: 'equals', criteria: 'Available' },
-      ],
-      fields: [
-        'animalID', 'animalName', 'animalSex', 'animalBreed', 'animalMix',
-        'animalAge', 'animalAgeGroup', 'animalSize', 'animalLocation',
-        'animalPictures', 'animalAdoptionUrl', 'animalOrgName',
-      ],
-    },
-  });
+  // Step 1: v5 — get 100 dogs within 150mi of Denver, sorted by distance
+  const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&sort=+distance&postalcode=80201&distance=150&fields[animals]=name,sex,breedString,ageString,sizeGroup,locationCitystate,orgName,urlDetail';
 
-  const res = await fetchWithTimeout('https://api.rescuegroups.org/http/v2.json', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body,
-  }, 8000);
-
-  if (!res.ok) return [];
-
-  const json = await res.json();
-  if (!json.data) return [];
-
-  return Object.values(json.data).map(a => {
-    // animalPictures is an array — grab first picture's secure URL
-    let image = '';
-    if (Array.isArray(a.animalPictures) && a.animalPictures.length > 0) {
-      const pic = a.animalPictures[0];
-      image = pic.urlSecureFullsize || pic.urlSecureThumbnail || pic.large?.url || pic.original?.url || '';
+  let v5Animals = [];
+  try {
+    const v5Res = await fetchWithTimeout(v5Url, {
+      headers: { 'Authorization': env.RESCUEGROUPS_API_KEY, 'Content-Type': 'application/json' }
+    }, 8000);
+    if (v5Res.ok) {
+      const v5Json = await v5Res.json();
+      if (v5Json.data && Array.isArray(v5Json.data)) v5Animals = v5Json.data;
     }
+  } catch (e) { return []; }
 
-    const breed = a.animalBreed || 'Mixed Breed';
-    const age_text = a.animalAge || a.animalAgeGroup || 'Unknown';
+  if (v5Animals.length === 0) return [];
 
+  // Step 2: v2 — batch lookup pictures for these animal IDs (batches of 25)
+  const animalIds = v5Animals.map(a => a.id);
+  const pictureMap = {};
+
+  try {
+    const batchSize = 25;
+    for (let i = 0; i < animalIds.length; i += batchSize) {
+      const batch = animalIds.slice(i, i + batchSize);
+      const filters = batch.map(id => ({ fieldName: 'animalID', operation: 'equals', criteria: String(id) }));
+      const filterProcessing = batch.map((_, idx) => idx + 1).join(' OR ');
+
+      const v2Res = await fetchWithTimeout('https://api.rescuegroups.org/http/v2.json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apikey: env.RESCUEGROUPS_API_KEY,
+          objectType: 'animals',
+          objectAction: 'publicSearch',
+          search: {
+            resultStart: 0, resultLimit: batchSize,
+            resultSort: 'animalID', resultOrder: 'asc',
+            filters, filterProcessing,
+            fields: ['animalID', 'animalPictures'],
+          },
+        }),
+      }, 8000);
+
+      if (v2Res.ok) {
+        const v2Json = await v2Res.json();
+        if (v2Json.data) {
+          for (const [id, animal] of Object.entries(v2Json.data)) {
+            if (Array.isArray(animal.animalPictures) && animal.animalPictures.length > 0) {
+              const pic = animal.animalPictures[0];
+              pictureMap[id] = pic.urlSecureFullsize || pic.urlSecureThumbnail || pic.large?.url || '';
+            }
+          }
+        }
+      }
+    }
+  } catch (e) { console.log('v2 picture lookup error:', e.message); }
+
+  // Step 3: merge — v5 location data + v2 picture URLs
+  return v5Animals.map(animal => {
+    const a = animal.attributes;
+    const image = pictureMap[animal.id] || '';
+    const breed = a.breedString || 'Mixed Breed';
+    const age_text = a.ageString || 'Unknown';
     return {
-      name: a.animalName || 'Unknown',
-      sex: a.animalSex || 'Unknown',
-      breed: a.animalMix === 'Yes' ? `${breed} Mix` : breed,
+      name: a.name || 'Unknown',
+      sex: a.sex || 'Unknown',
+      breed,
       image,
       age_text,
       age_category: getAgeCategoryFromText(age_text),
-      size: normalizeSizeRG(a.animalSize) || estimateSize(breed),
-      location: a.animalLocation || 'Colorado',
-      shelter: a.animalOrgName || 'Colorado Rescue',
-      link: a.animalAdoptionUrl || 'https://rescuegroups.org',
+      size: normalizeSizeRG(a.sizeGroup) || estimateSize(breed),
+      location: a.locationCitystate || 'Colorado',
+      shelter: a.orgName || 'Colorado Rescue',
+      link: a.urlDetail || 'https://rescuegroups.org',
       weight: null,
       adoption_fee: null,
     };
-  }).filter(d => {
-    if (!d.name || !d.image) return false;
-    // Only keep Colorado dogs — check location string for CO
-    const loc = d.location.toUpperCase();
-    return loc.includes(', CO') || loc.includes(' CO ') || loc.endsWith(' CO') || loc === 'CO' || loc.includes('COLORADO');
-  });
+  }).filter(d => d.name && d.image);
 }
 
 
