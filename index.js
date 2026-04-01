@@ -54,7 +54,7 @@ export default {
       if (!targetUrl) return new Response('Unknown source', { status: 400 });
       try {
         if (htmlDebug === 'rescuegroups') {
-          const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=5&postalcode=80201&distance=150';
+          const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=5&postalcode=80201&distance=150&include=orgs&fields[orgs]=name,city,state,websiteUrl,url,fosterUrl,adoptionUrl';
           const v5Res = await fetchWithTimeout(v5Url, {
             headers: {
               'Authorization': env.RESCUEGROUPS_API_KEY,
@@ -70,6 +70,7 @@ export default {
             v5_meta: v5Json.meta,
             v5_errors: v5Json.errors,
             v5_first_animal: v5Json.data && v5Json.data[0] ? { id: v5Json.data[0].id, attrs: v5Json.data[0].attributes } : null,
+            v5_included_orgs: v5Json.included ? v5Json.included.filter(i => i.type === 'orgs').slice(0, 5).map(o => ({ id: o.id, attrs: o.attributes })) : [],
             key_present: !!env.RESCUEGROUPS_API_KEY,
             key_length: env.RESCUEGROUPS_API_KEY ? env.RESCUEGROUPS_API_KEY.length : 0,
           }, null, 2), { headers: CORS_HEADERS });
