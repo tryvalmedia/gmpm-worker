@@ -338,13 +338,29 @@ async function fetchFoothills() {
 async function fetchRescueGroups(env) {
   if (!env.RESCUEGROUPS_API_KEY) return [];
 
-  const url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&postalcode=80201&distance=150&include=orgs&fields[animals]=name,sex,breedString,ageString,sizeGroup,pictureThumbnailUrl,orgName&fields[orgs]=name,city,state,url';
+  const url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&include=orgs&fields[animals]=name,sex,breedString,ageString,sizeGroup,pictureThumbnailUrl,orgName&fields[orgs]=name,city,state,url';
 
   const res = await fetchWithTimeout(url, {
+    method: 'POST',
     headers: {
       'Authorization': env.RESCUEGROUPS_API_KEY,
       'Content-Type': 'application/json'
-    }
+    },
+    body: JSON.stringify({
+      data: {
+        filterRadius: {
+          postalcode: '80201',
+          miles: 150
+        },
+        filters: [
+          {
+            fieldName: 'orgs.state',
+            operation: 'equals',
+            criteria: 'CO'
+          }
+        ]
+      }
+    })
   }, 8000);
 
   if (!res.ok) return [];
