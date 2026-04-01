@@ -393,10 +393,7 @@ function normalizeSizeRG(sizeString) {
 function getAgeCategoryFromText(text) {
   if (!text) return 'adult';
   const t = text.toLowerCase();
-  if (t.includes('week') || (t.includes('month') && !t.includes('year'))) {
-    const n = parseInt(t);
-    return (!isNaN(n) && n < 12) ? 'puppy' : 'adult';
-  }
+  // Check year FIRST — "6 years 2 weeks" should be adult, not puppy
   if (t.includes('year')) {
     const n = parseInt(t);
     if (!isNaN(n)) {
@@ -405,6 +402,11 @@ function getAgeCategoryFromText(text) {
       if (n <= 8) return 'adult';
       return 'senior';
     }
+  }
+  // Only treat week/month as puppy if no year present
+  if (t.includes('week') || t.includes('month')) {
+    const n = parseInt(t);
+    return (!isNaN(n) && n < 12) ? 'puppy' : 'adult';
   }
   if (t.includes('puppy')) return 'puppy';
   if (t.includes('senior')) return 'senior';
