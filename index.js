@@ -112,6 +112,12 @@ export default {
         try {
           const dogs = await s.fn();
           results[s.name] = { count: dogs.length, ms: Date.now() - start, sample: dogs[0] || null };
+        // For rescue_groups, also report link coverage
+        if (s.name === 'rescue_groups') {
+          const withOrgLink = dogs.filter(d => d.link && !d.link.includes('google.com')).length;
+          results[s.name].org_links = withOrgLink;
+          results[s.name].google_fallback = dogs.length - withOrgLink;
+        }
         } catch (e) {
           results[s.name] = { error: e.message, ms: Date.now() - start };
         }
@@ -386,7 +392,7 @@ async function fetchRescueGroups(env) {
       size: normalizeSizeRG(a.sizeGroup) || estimateSize(breed),
       location,
       shelter: a.orgName || 'Colorado Rescue',
-      link: orgWebsite || `https://www.rescuegroups.org/animals/search/#nosearch/type=animals&animalID=${animal.id}`,
+      link: orgWebsite || `https://www.google.com/search?q=${encodeURIComponent((a.name || '') + ' ' + (a.orgName || 'dog adoption'))}`,
       weight: null,
       adoption_fee: null,
     };
