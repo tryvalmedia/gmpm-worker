@@ -54,7 +54,7 @@ export default {
       if (!targetUrl) return new Response('Unknown source', { status: 400 });
       try {
         if (htmlDebug === 'rescuegroups') {
-          const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=5&postalcode=80201&distance=150&include=orgs&fields[orgs]=name,city,state,websiteUrl,url,fosterUrl,adoptionUrl';
+          const v5Url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=5&postalcode=80201&distance=150&include=orgs&fields[orgs]=name,city,state,url,fosterUrl,adoptionUrl';
           const v5Res = await fetchWithTimeout(v5Url, {
             headers: {
               'Authorization': env.RESCUEGROUPS_API_KEY,
@@ -338,7 +338,7 @@ async function fetchFoothills() {
 async function fetchRescueGroups(env) {
   if (!env.RESCUEGROUPS_API_KEY) return [];
 
-  const url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&postalcode=80201&distance=150&include=orgs&fields[animals]=name,sex,breedString,ageString,sizeGroup,pictureThumbnailUrl,orgName&fields[orgs]=name,city,state,websiteUrl';
+  const url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&postalcode=80201&distance=150&include=orgs&fields[animals]=name,sex,breedString,ageString,sizeGroup,pictureThumbnailUrl,orgName&fields[orgs]=name,city,state,url';
 
   const res = await fetchWithTimeout(url, {
     headers: {
@@ -359,7 +359,7 @@ async function fetchRescueGroups(env) {
         const state = inc.attributes.state || '';
         orgMap[inc.id] = {
           location: city && state ? `${city}, ${state}` : (city || state || 'Colorado'),
-          websiteUrl: inc.attributes.websiteUrl || null,
+          websiteUrl: inc.attributes.url || null,
           name: inc.attributes.name || '',
         };
       }
