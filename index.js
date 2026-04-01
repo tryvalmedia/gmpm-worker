@@ -93,6 +93,12 @@ export default {
       }
     }
 
+    // Dump — return full cached dog list for analysis
+    if (reqUrl.searchParams.get('dump') === '1') {
+      const allDogs = await getOrRefreshCache(env);
+      return new Response(JSON.stringify(allDogs.dogs, null, 2), { headers: CORS_HEADERS });
+    }
+
     // Debug — show per-source counts and timing
     if (reqUrl.searchParams.get('debug') === '1') {
       const results = {};
