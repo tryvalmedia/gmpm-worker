@@ -331,7 +331,7 @@ async function fetchFoothills() {
 async function fetchRescueGroups(env) {
   if (!env.RESCUEGROUPS_API_KEY) return [];
 
-  const url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&postalcode=80201&distance=150&include=orgs&fields[animals]=name,sex,breedString,ageString,sizeGroup,pictureThumbnailUrl,slug,orgName&fields[orgs]=name,city,state';
+  const url = 'https://api.rescuegroups.org/v5/public/animals/search/available/dogs/?limit=100&postalcode=80201&distance=150&include=orgs&fields[animals]=name,sex,breedString,ageString,sizeGroup,pictureThumbnailUrl,orgName&fields[orgs]=name,city,state,websiteUrl';
 
   const res = await fetchWithTimeout(url, {
     headers: {
@@ -350,7 +350,10 @@ async function fetchRescueGroups(env) {
       if (inc.type === 'orgs' && inc.attributes) {
         const city = inc.attributes.city || '';
         const state = inc.attributes.state || '';
-        orgMap[inc.id] = city && state ? `${city}, ${state}` : (city || state || 'Colorado');
+        orgMap[inc.id] = {
+          location: city && state ? `${city}, ${state}` : (city || state || 'Colorado'),
+          websiteUrl: inc.attributes.websiteUrl || null,
+        };
       }
     }
   }
@@ -361,9 +364,13 @@ async function fetchRescueGroups(env) {
     if (!image) return null;
 
     let location = 'Colorado';
+    let orgWebsite = null;
     if (animal.relationships?.orgs?.data?.length > 0) {
       const orgId = animal.relationships.orgs.data[0].id;
-      if (orgMap[orgId]) location = orgMap[orgId];
+      if (orgMap[orgId]) {
+        location = orgMap[orgId].location;
+        orgWebsite = orgMap[orgId].websiteUrl;
+      }
     }
 
     const breed = a.breedString || 'Mixed Breed';
@@ -379,7 +386,7 @@ async function fetchRescueGroups(env) {
       size: normalizeSizeRG(a.sizeGroup) || estimateSize(breed),
       location,
       shelter: a.orgName || 'Colorado Rescue',
-      link: a.slug ? `https://rescuegroups.org/adopt/${a.slug}/` : `https://rescuegroups.org/adopt/${animal.id}/`,
+      link: orgWebsite || `https://www.rescuegroups.org/animals/search/#nosearch/type=animals&animalID=${animal.id}`,
       weight: null,
       adoption_fee: null,
     };
@@ -439,55 +446,70 @@ function estimateSizeFromWeight(w) {
 }
 
 function scoreDogs(dogs, params) {
-  return dogs
+  const hi = ['border collie', 'husky', 'shepherd', 'retriever', 'pointer', 'weimaraner', 'dalmatian', 'jack russell', 'australian', 'cattle', 'whippet'];
+  const lo = ['basset', 'bulldog', 'pug', 'shih tzu', 'maltese', 'havanese', 'bichon', 'bloodhound'];
+
+  const ageParam = params['5'] || params['3'] || '';
+  const sizeParam = params['4'] ? (Array.isArray(params['4']) ? params['4'] : params['4'].split(',')) : null;
+  const activityParam = params['2'] || '';
+
+  // Helper to get activity bucket for a dog
+  function getDogActivity(dog) {
+    const b = (dog.breed || '').toLowerCase();
+    if (hi.some(x => b.includes(x))) return 'active';
+    if (lo.some(x => b.includes(x))) return 'chill';
+    return 'moderate';
+  }
+
+  // Hard filter — only dogs with photos + matching quiz answers
+  // If a filter has no matches in the pool, we skip that filter (graceful fallback)
+  let pool = dogs.filter(d => d.image && d.image.length > 10);
+
+  // Try applying each filter; only apply if it leaves at least 1 dog
+  if (ageParam) {
+    const filtered = pool.filter(d => d.age_category === ageParam);
+    if (filtered.length > 0) pool = filtered;
+  }
+
+  if (sizeParam) {
+    const filtered = pool.filter(d => sizeParam.includes(d.size));
+    if (filtered.length > 0) pool = filtered;
+  }
+
+  if (activityParam) {
+    const filtered = pool.filter(d => getDogActivity(d) === activityParam);
+    if (filtered.length > 0) pool = filtered;
+  }
+
+  // Score remaining dogs for variety/ranking
+  return pool
     .map(dog => {
       let score = 0;
       const reasons = [];
+      const dogActivity = getDogActivity(dog);
 
-      if (dog.image && dog.image.length > 10) score += 20;
+      score += 20; // has photo (already filtered)
 
-      const ageParam = params['5'] || params['3'] || '';
-      if (ageParam && dog.age_category) {
-        if (ageParam === dog.age_category) {
-          score += 30;
-          reasons.push(`Matches your ${dog.age_category} preference`);
-        } else {
-          score += 8;
-        }
+      if (ageParam && dog.age_category === ageParam) {
+        score += 30;
+        reasons.push(`Matches your ${dog.age_category} preference`);
       } else {
         score += 15;
       }
 
-      if (params['4']) {
-        const sizes = Array.isArray(params['4']) ? params['4'] : params['4'].split(',');
-        if (sizes.includes(dog.size)) {
-          score += 25;
-          reasons.push(`${dog.size.charAt(0).toUpperCase() + dog.size.slice(1)}-sized dog`);
-        } else {
-          score += 5;
-        }
+      if (sizeParam && sizeParam.includes(dog.size)) {
+        score += 25;
+        reasons.push(`${dog.size.charAt(0).toUpperCase() + dog.size.slice(1)}-sized dog`);
       } else {
         score += 15;
       }
 
-      if (params['2'] && dog.breed) {
-        const b = dog.breed.toLowerCase();
-        const hi = ['border collie', 'husky', 'shepherd', 'retriever', 'pointer', 'weimaraner', 'dalmatian', 'jack russell', 'australian', 'cattle', 'whippet'];
-        const lo = ['basset', 'bulldog', 'pug', 'shih tzu', 'maltese', 'havanese', 'bichon', 'bloodhound'];
-        const isHi = hi.some(x => b.includes(x));
-        const isLo = lo.some(x => b.includes(x));
-
-        if (params['2'] === 'active' && isHi) {
-          score += 20; reasons.push('Energetic breed for your active lifestyle');
-        } else if (params['2'] === 'chill' && isLo) {
-          score += 20; reasons.push('Calm breed that matches your pace');
-        } else if (params['2'] === 'moderate' && !isHi && !isLo) {
-          score += 20; reasons.push('Well-balanced energy for your lifestyle');
-        } else {
-          score += 8;
-        }
+      if (activityParam && dogActivity === activityParam) {
+        const labels = { active: 'Energetic breed for your active lifestyle', chill: 'Calm breed that matches your pace', moderate: 'Well-balanced energy for your lifestyle' };
+        score += 20;
+        reasons.push(labels[activityParam] || 'Matched to your activity level');
       } else {
-        score += 12;
+        score += 8;
       }
 
       score += Math.floor(Math.random() * 5);
@@ -500,6 +522,5 @@ function scoreDogs(dogs, params) {
 
       return { ...dog, match_score: matchPct, match_reasons: reasons };
     })
-    .filter(d => d.image && d.image.length > 10)
     .sort((a, b) => b.match_score - a.match_score);
 }
