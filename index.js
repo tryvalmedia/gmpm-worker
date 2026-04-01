@@ -359,6 +359,7 @@ async function fetchRescueGroups(env) {
         orgMap[inc.id] = {
           location: city && state ? `${city}, ${state}` : (city || state || 'Colorado'),
           websiteUrl: inc.attributes.websiteUrl || null,
+          name: inc.attributes.name || '',
         };
       }
     }
@@ -371,11 +372,13 @@ async function fetchRescueGroups(env) {
 
     let location = 'Colorado';
     let orgWebsite = null;
+    let orgName = a.orgName || 'Colorado Rescue';
     if (animal.relationships?.orgs?.data?.length > 0) {
       const orgId = animal.relationships.orgs.data[0].id;
       if (orgMap[orgId]) {
         location = orgMap[orgId].location;
         orgWebsite = orgMap[orgId].websiteUrl;
+        if (orgMap[orgId].name) orgName = orgMap[orgId].name;
       }
     }
 
@@ -391,8 +394,8 @@ async function fetchRescueGroups(env) {
       age_category: getAgeCategoryFromText(age_text),
       size: normalizeSizeRG(a.sizeGroup) || estimateSize(breed),
       location,
-      shelter: a.orgName || 'Colorado Rescue',
-      link: orgWebsite || `https://www.google.com/search?q=${encodeURIComponent((a.name || '') + ' ' + (a.orgName || 'dog adoption'))}`,
+      shelter: orgName,
+      link: orgWebsite || `https://www.google.com/search?q=${encodeURIComponent(((a.name || '') + ' ' + orgName + ' dog adoption').trim())}`,
       weight: null,
       adoption_fee: null,
     };
